@@ -58,10 +58,62 @@ sdk.recordAnalyticsEvent('user_signup', {...});
 
 ### Installation
 
+> **Note**: UserMesh is a **private package**. Standard npm registry installation will not work.
+
+**Option 1: From Private Repository (Recommended)**
+
 ```bash
-npm install @usermesh/sdk-web
+# Clone the repository
+git clone https://gitcode.com/ctkqiang_sr/UserMesh.git
+cd UserMesh
+
+# Install dependencies
+npm install
 # or
-bun add @usermesh/sdk-web
+bun install
+
+# Build the package
+npm run build
+# or
+bun run build
+
+# Install in your project (from local copy)
+npm install /path/to/UserMesh
+
+# Or use npm link for development
+npm link
+cd /path/to/your/project
+npm link @usermesh/sdk-web
+```
+
+**Option 2: From Package.json (Private Repository)**
+
+Add to your `package.json`:
+
+```json
+{
+  "dependencies": {
+    "@usermesh/sdk-web": "git+https://gitcode.com/ctkqiang_sr/UserMesh.git#main"
+  }
+}
+```
+
+Then run:
+
+```bash
+npm install
+# or
+bun install
+```
+
+**Option 3: With Authentication (For Private NPM Registry)**
+
+If published to a private registry, configure `.npmrc`:
+
+```bash
+npm config set registry https://your-private-registry.com
+npm config set //your-private-registry.com:_authToken YOUR_AUTH_TOKEN
+npm install @usermesh/sdk-web
 ```
 
 ### Minimal Setup
