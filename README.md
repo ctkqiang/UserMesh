@@ -843,7 +843,7 @@ MIT License - See LICENSE file for details
 
 ## Author
 
-**钟智强** (Zhong Zhi Qiang)  
+**钟智强**
 Email: ctkqiang@dingtalk.com  
 Repository: https://gitcode.com/ctkqiang_sr/UserMesh.git
 
