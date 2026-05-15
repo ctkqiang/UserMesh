@@ -1,0 +1,37 @@
+{
+  "name": "usermesh",
+  "version": "1.0.0",
+  "description": "Unified analytics platform - single source of truth for GA, PostHog, Mixpanel, and Microsoft Clarity",
+  "module": "index.ts",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "bun run index.ts",
+    "build": "bun build ./src/index.ts --outdir dist --minify",
+    "test": "bun test",
+    "lint": "biome lint src/",
+    "format": "biome format src/ --write",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "hono": "^4.0.0",
+    "pg": "^8.11.0",
+    "redis": "^4.6.0",
+    "kafka-node": "^5.0.0",
+    "axios": "^1.6.0",
+    "jose": "^5.0.0",
+    "uuid": "^9.0.0",
+    "zod": "^3.22.0",
+    "pino": "^8.17.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0",
+    "@biomejs/biome": "^1.0.0",
+    "vitest": "^1.0.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
