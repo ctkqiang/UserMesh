@@ -74,5 +74,17 @@ export { UserMeshLocalStorageAdapter } from './storage/UserMeshLocalStorageAdapt
 // Utilities
 export { UserMeshIdentifierGenerator } from './utils/UserMeshIdentifierGenerator';
 
+// Connectors (analytics platform integrations)
+export { GoogleAnalytics4Connector } from './connectors/GoogleAnalytics4Connector';
+export { PostHogAnalyticsConnector } from './connectors/PostHogAnalyticsConnector';
+export { MixpanelAnalyticsConnector } from './connectors/MixpanelAnalyticsConnector';
+export { MicrosoftClarityConnector } from './connectors/MicrosoftClarityConnector';
+export { CustomEndpointConnector } from './connectors/CustomEndpointConnector';
+
+export type {
+  AnalyticsConnectorInterface,
+  ConnectorOperationResult,
+} from './connectors/types/AnalyticsConnectorInterface';
+
 // Configuration validators
 export type { ConfigurationValidationResult } from './core/UserMeshConfigurationValidator';

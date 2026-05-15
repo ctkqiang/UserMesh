@@ -1,5 +1,5 @@
 {
-  "name": "usermesh",
+  "name": "@ctkqiang/usermesh",
   "version": "1.0.0",
   "description": "Unified analytics platform - single source of truth for GA, PostHog, Mixpanel, and Microsoft Clarity",
   "module": "index.ts",

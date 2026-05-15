@@ -26,10 +26,16 @@ import type {
   EventValidationResult,
   EventBatch,
 } from '../types/UserMeshEventTypes';
+import type { AnalyticsConnectorInterface } from '../connectors/types/AnalyticsConnectorInterface';
 import { UserMeshConfigurationValidator } from './UserMeshConfigurationValidator';
 import { UserMeshEncryptionService } from '../encryption/UserMeshDataEncryptionService';
 import { UserMeshEventValidator } from '../validation/UserMeshEventValidationEngine';
 import { UserMeshIdentifierGenerator } from '../utils/UserMeshIdentifierGenerator';
+import { GoogleAnalytics4Connector } from '../connectors/GoogleAnalytics4Connector';
+import { PostHogAnalyticsConnector } from '../connectors/PostHogAnalyticsConnector';
+import { MixpanelAnalyticsConnector } from '../connectors/MixpanelAnalyticsConnector';
+import { MicrosoftClarityConnector } from '../connectors/MicrosoftClarityConnector';
+import { CustomEndpointConnector } from '../connectors/CustomEndpointConnector';
 
 /**
  * Main UserMesh SDK Client class.
@@ -127,6 +133,14 @@ export class UserMeshAnalyticsSdkClient {
    * Configuration validator to ensure required fields are present.
    */
   private configurationValidator: UserMeshConfigurationValidator;
+
+  /**
+   * Map of initialized analytics platform connectors.
+   * Each enabled platform gets a connector instance that handles its specific API.
+   * Key: platform name (e.g., "google_analytics_4", "posthog", "mixpanel", "clarity")
+   * Value: Initialized connector instance implementing AnalyticsConnectorInterface
+   */
+  private initializedAnalyticsConnectorsMap: Map<string, AnalyticsConnectorInterface> = new Map();
 
   /**
    * Zustand store for event queue state (for offline persistence).
@@ -759,23 +773,198 @@ export class UserMeshAnalyticsSdkClient {
    * Initialize connectors for each enabled platform.
    */
   private async initializeEnabledAnalyticsPlatformConnectors(): Promise<void> {
-    // Implementation to initialize GA4, PostHog, Mixpanel, Clarity connectors
+    const initializeConnectorTasks: Promise<void>[] = [];
+
+    this.logDebugMessage('Starting initialization of analytics platform connectors');
+
+    // Initialize Google Analytics 4 connector if enabled
+    if (this.userMeshSdkConfiguration.analyticsIntegrations.googleAnalytics4?.isEnabled) {
+      const ga4Config = this.userMeshSdkConfiguration.analyticsIntegrations.googleAnalytics4;
+      const ga4Connector = new GoogleAnalytics4Connector({
+        googlePropertyIdentifier: ga4Config.googlePropertyIdentifier,
+        measurementProtocolApiSecret: ga4Config.measurementIdentifier,
+      });
+
+      initializeConnectorTasks.push(
+        ga4Connector.initializeAnalyticsConnector().then(() => {
+          this.initializedAnalyticsConnectorsMap.set('google_analytics_4', ga4Connector);
+          this.logDebugMessage('Google Analytics 4 connector initialized');
+        })
+      );
+    }
+
+    // Initialize PostHog connector if enabled
+    if (this.userMeshSdkConfiguration.analyticsIntegrations.postHogPlatform?.isEnabled) {
+      const postHogConfig = this.userMeshSdkConfiguration.analyticsIntegrations.postHogPlatform;
+      const postHogConnector = new PostHogAnalyticsConnector({
+        projectApiKey: postHogConfig.projectApiKey,
+        customHostUrl: postHogConfig.customHostUrl,
+      });
+
+      initializeConnectorTasks.push(
+        postHogConnector.initializeAnalyticsConnector().then(() => {
+          this.initializedAnalyticsConnectorsMap.set('posthog', postHogConnector);
+          this.logDebugMessage('PostHog connector initialized');
+        })
+      );
+    }
+
+    // Initialize Mixpanel connector if enabled
+    if (this.userMeshSdkConfiguration.analyticsIntegrations.mixpanelPlatform?.isEnabled) {
+      const mixpanelConfig = this.userMeshSdkConfiguration.analyticsIntegrations.mixpanelPlatform;
+      const mixpanelConnector = new MixpanelAnalyticsConnector({
+        projectToken: mixpanelConfig.projectToken,
+      });
+
+      initializeConnectorTasks.push(
+        mixpanelConnector.initializeAnalyticsConnector().then(() => {
+          this.initializedAnalyticsConnectorsMap.set('mixpanel', mixpanelConnector);
+          this.logDebugMessage('Mixpanel connector initialized');
+        })
+      );
+    }
+
+    // Initialize Microsoft Clarity connector if enabled
+    if (this.userMeshSdkConfiguration.analyticsIntegrations.microsoftClarity?.isEnabled) {
+      const clarityConfig = this.userMeshSdkConfiguration.analyticsIntegrations.microsoftClarity;
+      const clarityConnector = new MicrosoftClarityConnector({
+        projectIdentifier: clarityConfig.projectIdentifier,
+      });
+
+      initializeConnectorTasks.push(
+        clarityConnector.initializeAnalyticsConnector().then(() => {
+          this.initializedAnalyticsConnectorsMap.set('clarity', clarityConnector);
+          this.logDebugMessage('Microsoft Clarity connector initialized');
+        })
+      );
+    }
+
+    // Initialize custom endpoint connector if configured
+    if (this.userMeshSdkConfiguration.analyticsIntegrations.customAnalyticsEndpoint?.isEnabled) {
+      const customConfig = this.userMeshSdkConfiguration.analyticsIntegrations.customAnalyticsEndpoint;
+      const customConnector = new CustomEndpointConnector({
+        endpointUrl: customConfig.endpointUrl,
+        apiKeyOrToken: customConfig.apiKeyOrToken,
+        customAuthenticationMethod: customConfig.customAuthenticationMethod,
+      });
+
+      initializeConnectorTasks.push(
+        customConnector.initializeAnalyticsConnector().then(() => {
+          this.initializedAnalyticsConnectorsMap.set('custom_endpoint', customConnector);
+          this.logDebugMessage('Custom endpoint connector initialized');
+        })
+      );
+    }
+
+    // Wait for all connectors to initialize
+    try {
+      await Promise.all(initializeConnectorTasks);
+      this.logDebugMessage(
+        `All ${this.initializedAnalyticsConnectorsMap.size} analytics connectors initialized successfully`
+      );
+    } catch (connectorInitializationError) {
+      console.warn(
+        '[UserMesh] One or more connectors failed to initialize:',
+        connectorInitializationError
+      );
+    }
   }
 
   /**
    * Update user profile across all platforms.
+   *
+   * Sends the user identification to all enabled connectors so they can
+   * associate all subsequent events with this user.
+   *
+   * When: Called whenever identifyCurrentUser() or updateUserTraits() is invoked.
    */
   private async updateUserProfileAcrossAnalyticsPlatforms(
     profile: UserIdentificationProfile
   ): Promise<void> {
-    // Implementation to call identify/set user in each platform connector
+    const identifyTasks: Promise<void>[] = [];
+
+    this.logDebugMessage(`Identifying user across ${this.initializedAnalyticsConnectorsMap.size} platforms`);
+
+    // Send identify call to each enabled connector
+    for (const [platformName, connector] of this.initializedAnalyticsConnectorsMap) {
+      identifyTasks.push(
+        connector.identifyUserOnAnalyticsPlatform(profile).then((result) => {
+          if (result.wasOperationSuccessful) {
+            this.logDebugMessage(
+              `User identification successful on ${platformName}: ${result.operationStatusMessage}`
+            );
+          } else {
+            console.warn(
+              `[UserMesh] User identification failed on ${platformName}: ${result.operationStatusMessage}`,
+              result.underlyingErrorIfAny
+            );
+          }
+        })
+      );
+    }
+
+    // Wait for all platforms to complete identification
+    try {
+      await Promise.all(identifyTasks);
+    } catch (identificationError) {
+      console.warn('[UserMesh] Error identifying user across platforms:', identificationError);
+    }
   }
 
   /**
    * Send a batch of events to all enabled platforms.
+   *
+   * Transmits the same batch of events to each enabled analytics platform.
+   * Each connector transforms the universal UserMesh format into that platform's
+   * specific format before transmission.
+   *
+   * This is the key method that enables UserMesh's "send once, everywhere" capability.
+   * One call to recordAnalyticsEvent results in events being sent to GA4, PostHog,
+   * Mixpanel, Clarity, and any custom endpoints simultaneously.
+   *
+   * When: Called whenever the event queue reaches the batch size limit or the
+   * flush interval timer fires.
    */
   private async sendEventBatchToAllEnabledPlatforms(batch: EventBatch): Promise<void> {
-    // Implementation to send batch to each enabled platform
+    if (this.initializedAnalyticsConnectorsMap.size === 0) {
+      this.logDebugMessage('No analytics connectors enabled. Batch not sent.');
+      return;
+    }
+
+    const transmissionTasks: Promise<void>[] = [];
+
+    this.logDebugMessage(
+      `Sending event batch to ${this.initializedAnalyticsConnectorsMap.size} platforms (${batch.queuedAnalyticsEventRecords.length} events)`
+    );
+
+    // Send the batch to each enabled connector simultaneously
+    for (const [platformName, connector] of this.initializedAnalyticsConnectorsMap) {
+      transmissionTasks.push(
+        connector.transmitEventBatchToAnalyticsPlatform(batch).then((result) => {
+          if (result.wasOperationSuccessful) {
+            this.logDebugMessage(
+              `Event batch sent successfully to ${platformName}: ${result.operationStatusMessage}`
+            );
+          } else {
+            console.warn(
+              `[UserMesh] Event transmission failed for ${platformName}: ${result.operationStatusMessage}`,
+              result.underlyingErrorIfAny
+            );
+
+            // For offline resilience, we could re-queue failed batches here
+            // but that's handled by the offline storage module
+          }
+        })
+      );
+    }
+
+    // Wait for all platforms to receive the batch
+    try {
+      await Promise.all(transmissionTasks);
+      this.logDebugMessage('Event batch transmission to all platforms completed');
+    } catch (transmissionError) {
+      console.warn('[UserMesh] Error transmitting batch to platforms:', transmissionError);
+    }
   }
 
   /**
@@ -802,9 +991,45 @@ export class UserMeshAnalyticsSdkClient {
 
   /**
    * Close all platform connectors.
+   *
+   * Gracefully shuts down each connector, allowing them to:
+   * - Flush any remaining buffered events
+   * - Clean up resources (timers, listeners, SDK instances)
+   * - Log shutdown status for debugging
+   *
+   * When: Called during destroyUserMeshSdkAndCleanup() when the app is closing
+   * or the user has logged out.
    */
   private async closeAllAnalyticsPlatformConnectors(): Promise<void> {
-    // Implementation to close each connector
+    if (this.initializedAnalyticsConnectorsMap.size === 0) {
+      return;
+    }
+
+    this.logDebugMessage(
+      `Shutting down ${this.initializedAnalyticsConnectorsMap.size} analytics connectors`
+    );
+
+    const shutdownTasks: Promise<void>[] = [];
+
+    // Shut down each connector
+    for (const [platformName, connector] of this.initializedAnalyticsConnectorsMap) {
+      shutdownTasks.push(
+        connector.shutdownAnalyticsConnector().then(() => {
+          this.logDebugMessage(`${platformName} connector shut down`);
+        })
+      );
+    }
+
+    // Wait for all connectors to shut down
+    try {
+      await Promise.all(shutdownTasks);
+      this.logDebugMessage('All analytics connectors shut down successfully');
+    } catch (shutdownError) {
+      console.warn('[UserMesh] Error shutting down connectors:', shutdownError);
+    }
+
+    // Clear the connectors map
+    this.initializedAnalyticsConnectorsMap.clear();
   }
 
   /**
